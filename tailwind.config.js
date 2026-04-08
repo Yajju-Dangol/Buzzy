@@ -1,0 +1,97 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          50: '#fffef5',
+          100: '#fff9c4',
+          200: '#fff59d',
+          300: '#fff176',
+          400: '#ffee58',
+          500: '#ffeb3b',
+          600: '#fdd835',
+          700: '#fbc02d',
+          800: '#f9a825',
+          900: '#f57f17',
+        },
+        cream: {
+          50: '#fffef7',
+          100: '#fefce8',
+          200: '#fef9c3',
+          300: '#fef08a',
+          400: '#fde047',
+          500: '#facc15',
+          600: '#eab308',
+          700: '#ca8a04',
+          800: '#a16207',
+          900: '#854d0e',
+        },
+        accent: {
+          50: '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
+          400: '#fb923c',
+          500: '#f97316',
+          600: '#ea580c',
+          700: '#c2410c',
+          800: '#9a3412',
+          900: '#7c2d12',
+        },
+        sage: {
+          50: '#f6f7f4',
+          100: '#e8ebe3',
+          200: '#d3d9c9',
+          300: '#b3bda3',
+          400: '#94a27e',
+          500: '#76875e',
+          600: '#5c6b48',
+          700: '#485439',
+          800: '#3d4532',
+          900: '#353b2d',
+        },
+        warm: {
+          50: '#fefdf8',
+          100: '#fdf8e8',
+          200: '#faf0c5',
+          300: '#f6e59a',
+          400: '#f2d56b',
+          500: '#edc43c',
+          600: '#d4a82e',
+          700: '#b08824',
+          800: '#8d6c1e',
+          900: '#73581a',
+        },
+      },
+      fontFamily: {
+        sans: ['Poppins', 'Inter', 'system-ui', 'sans-serif'],
+      },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'wave': 'wave 1.5s ease-in-out infinite',
+        'spin-slow': 'spin 3s linear infinite',
+        'bounce-slow': 'bounce 2s infinite',
+      },
+      keyframes: {
+        wave: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.05)' },
+        }
+      },
+      borderRadius: {
+        '4xl': '2rem',
+      },
+      boxShadow: {
+        'soft': '0 4px 20px rgba(0, 0, 0, 0.08)',
+        'card': '0 8px 32px rgba(0, 0, 0, 0.06)',
+        'glow': '0 0 20px rgba(255, 235, 59, 0.3)',
+      }
+    },
+  },
+  plugins: [],
+}

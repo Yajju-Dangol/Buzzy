@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-theme-900 text-cream-400;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-highlight-500 hover:bg-highlight-400 text-cream-400 font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg shadow-black/30 hover:shadow-black/50 hover:scale-105 active:scale-95;
+  }
+  
+  .btn-secondary {
+    @apply bg-theme-800 hover:bg-theme-700 text-cream-300 font-semibold py-3 px-6 rounded-xl transition-all duration-200 border border-highlight-500 hover:border-highlight-400;
+  }
+  
+  .card {
+    @apply bg-theme-800/60 backdrop-blur-xl border border-highlight-500/50 rounded-2xl p-6;
+  }
+  
+  .card-hover {
+    @apply card hover:border-highlight-400 hover:bg-theme-700/60 transition-all duration-300;
+  }
+  
+  .input {
+    @apply bg-theme-900 border border-highlight-500 rounded-xl px-4 py-3 text-cream-400 placeholder-highlight-500 focus:outline-none focus:border-cream-400 focus:ring-1 focus:ring-cream-400/30 transition-all duration-200;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-cream-400 to-accent-400 bg-clip-text text-transparent;
+  }
+  
+  .glass {
+    @apply bg-theme-900/40 backdrop-blur-xl border border-highlight-500/30;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-theme-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-highlight-500 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-highlight-400;
+}
