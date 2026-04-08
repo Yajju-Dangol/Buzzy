@@ -2,9 +2,9 @@ import type { GeminiTransactionResponse } from '../types/database';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
 
-const SYSTEM_PROMPT = `You are VoiceBudget AI, a Nepali-language financial assistant. You analyze voice transcripts and perform three types of actions:
+const SYSTEM_PROMPT = `You are Buzzy AI, a Nepali-language financial assistant. You analyze voice transcripts and perform three types of actions:
 
 1. ADD TRANSACTIONS — Extract income, expenses, transfers
 2. CREATE FINANCIAL GOALS — Identify savings goals, targets
@@ -129,4 +129,47 @@ Return ONLY valid JSON matching the response schema. No markdown, no explanation
   } catch {
     throw new Error(`Failed to parse Gemini response as JSON: ${cleaned}`);
   }
+}
+
+export async function generateWeeklySummary(
+  transactions: any[],
+  aiMemories: any[]
+): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
+  }
+
+  const userPrompt = `You are an AI financial assistant. Make an engaging, short, friendly summary in Nepali language (approx. 2-3 sentences max) based on the user's data from the last 7 days.
+Focus strictly on the key highlights: total income/spend, the top expense category, and any relevant insight from their AI memory notes.
+The summary MUST ONLY be in written Nepali (Devanagari script), formatted to sound natural when spoken by a Text-to-Speech system.
+
+LAST 7 DAYS TRANSACTIONS:
+${JSON.stringify(transactions)}
+
+AI MEMORIES:
+${JSON.stringify(aiMemories)}
+
+Return ONLY the Nepali text.`;
+
+  const response = await fetch(
+    `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error generating summary`);
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  return rawText.trim();
 }

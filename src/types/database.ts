@@ -1,5 +1,5 @@
 // ============================================
-// VoiceBudget AI - Database Types
+// Buzzy AI - Database Types
 // ============================================
 // Match the Supabase schema exactly
 // Run `npx supabase gen types typescript --project-id <id>` after deploying

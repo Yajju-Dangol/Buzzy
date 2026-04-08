@@ -45,3 +45,28 @@ export async function transcribeAudio(
     durationMs: audioBlob.size > 0 ? Math.round(audioBlob.size / 16) : 0,
   };
 }
+
+export async function textToSpeech(text: string, voiceId: string = 'EXAVITQu4vr4xnSDxMaL'): Promise<Blob> {
+  if (!ELEVENLABS_API_KEY) {
+    throw new Error('No ElevenLabs API key configured');
+  }
+
+  const response = await fetch(`${ELEVENLABS_BASE_URL}/text-to-speech/${voiceId}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_multilingual_v2',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ElevenLabs TTS error (${response.status}): ${errorText}`);
+  }
+
+  return await response.blob();
+}

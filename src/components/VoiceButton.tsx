@@ -178,38 +178,31 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
         onClick={handleClick}
         disabled={state === 'processing'}
         className={cn(
-          "relative w-40 h-40 rounded-full flex items-center justify-center transition-all duration-300 outline-none focus:ring-4 focus:ring-highlight-500/50",
-          state === 'listening' && "bg-gradient-to-br from-highlight-500 to-highlight-600 shadow-2xl shadow-highlight-500/50",
+          "relative w-40 h-40 rounded-full flex items-center justify-center transition-all duration-300 outline-none focus:ring-4 focus:ring-highlight-500/50 cursor-pointer overflow-hidden bg-highlight-500 border-none",
+          state === 'listening' && "shadow-2xl shadow-highlight-500/50 ring-4 ring-highlight-500",
           state === 'processing' && "bg-theme-700 cursor-wait",
-          state === 'idle' && "bg-gradient-to-br from-highlight-500 to-theme-700 hover:from-highlight-400 hover:to-highlight-500 shadow-xl cursor-pointer"
+          state === 'idle' && "shadow-xl hover:shadow-2xl"
         )}
         whileHover={state !== 'processing' ? { scale: 1.05 } : {}}
         whileTap={state !== 'processing' ? { scale: 0.95 } : {}}
       >
-        {state === 'listening' && (
-          <motion.div
-            className="absolute inset-0 rounded-full overflow-hidden"
-            animate={{ opacity: [0.5, 0.8, 0.5] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-cream-400/20 via-highlight-500/30 to-cream-400/20" />
-          </motion.div>
-        )}
-
-        <div className="relative z-10">
+        <div className="relative z-10 w-full h-full">
           {state === 'idle' && (
-            <Mic className="w-12 h-12 text-cream-300" />
+            <img src="/buzzy.png" alt="Buzzy Microphone" className="w-full h-full object-cover" />
           )}
           {state === 'listening' && (
             <motion.div
-              animate={{ scale: [1, 1.1, 1] }}
+              animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 1, repeat: Infinity }}
+              className="w-full h-full"
             >
-              <Mic className="w-12 h-12 text-cream-400" />
+              <img src="/buzzy.png" alt="Buzzy Microphone" className="w-full h-full object-cover" />
             </motion.div>
           )}
           {state === 'processing' && (
-            <Loader2 className="w-12 h-12 text-cream-300 animate-spin" />
+            <div className="w-full h-full flex items-center justify-center bg-theme-800">
+              <Loader2 className="w-12 h-12 text-cream-300 animate-spin" />
+            </div>
           )}
         </div>
 

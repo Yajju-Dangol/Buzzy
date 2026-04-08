@@ -267,7 +267,7 @@ function App() {
                 <Wallet className="w-6 h-6 text-cream-400" />
               </div>
               <div>
-                <h1 className="font-bold text-cream-400">VoiceBudget</h1>
+                <h1 className="font-bold text-cream-400">Buzzy</h1>
                 <p className="text-xs text-highlight-500">AI Finance Assistant</p>
               </div>
             </div>

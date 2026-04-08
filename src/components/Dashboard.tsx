@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Wallet, TrendingUp, PiggyBank } from 'lucide-react';
+import { Wallet, TrendingUp, PiggyBank, PlayCircle, Loader2, Volume2 } from 'lucide-react';
 import { StatCard } from './StatCard';
 import { TransactionList } from './TransactionList';
 import { BudgetProgress } from './BudgetProgress';
@@ -7,6 +8,9 @@ import { FinancialGoals } from './FinancialGoals';
 import { SubscriptionsList } from './SubscriptionsList';
 import { cn } from '../utils/cn';
 import type { DashboardData } from '../types';
+import { generateWeeklySummary } from '../services/gemini';
+import { textToSpeech } from '../services/elevenlabs';
+import { getTransactionsByDateRange, getActiveAiMemories } from '../services/database';
 
 interface DashboardProps {
   data: DashboardData;
@@ -14,10 +18,67 @@ interface DashboardProps {
 }
 
 export function Dashboard({ data, className }: DashboardProps) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
   const { totalIncome, totalExpenses, netSavings, savingsRate } = data;
+
+  const playWeeklySummary = async () => {
+    try {
+      setIsLoadingAudio(true);
+      
+      const now = new Date();
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(now.getDate() - 7);
+      
+      const startDate = oneWeekAgo.toISOString();
+      const endDate = now.toISOString();
+
+      const [recentTx, aiMemories] = await Promise.all([
+        getTransactionsByDateRange(startDate, endDate),
+        getActiveAiMemories(20)
+      ]);
+
+      const summaryText = await generateWeeklySummary(recentTx, aiMemories);
+      const audioBlob = await textToSpeech(summaryText);
+      const url = URL.createObjectURL(audioBlob);
+      
+      setAudioUrl(url);
+      
+      const audio = new Audio(url);
+      audio.onplay = () => setIsPlaying(true);
+      audio.onended = () => setIsPlaying(false);
+      audio.onerror = () => setIsPlaying(false);
+      await audio.play();
+
+    } catch (err) {
+      console.error('Error playing weekly summary:', err);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  };
 
   return (
     <div className={cn('space-y-6', className)}>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold bg-gradient-to-r from-theme-900 to-theme-700 bg-clip-text text-transparent">Overview</h2>
+        <button
+          onClick={playWeeklySummary}
+          disabled={isLoadingAudio || isPlaying}
+          className="flex items-center gap-2 px-4 py-2 bg-highlight-500 hover:bg-highlight-400 text-cream-400 rounded-xl transition-all shadow-md shadow-highlight-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoadingAudio ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : isPlaying ? (
+            <Volume2 className="w-5 h-5" />
+          ) : (
+            <PlayCircle className="w-5 h-5" />
+          )}
+          <span className="font-semibold text-sm">Play Weekly Summary</span>
+        </button>
+      </div>
+
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
