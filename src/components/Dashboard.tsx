@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Wallet, TrendingUp, PiggyBank, PlayCircle, Loader2, Volume2 } from 'lucide-react';
+import { Wallet, TrendingUp, PiggyBank, PlayCircle, Loader2, Volume2, Link2, Unlink } from 'lucide-react';
 import { StatCard } from './StatCard';
 import { TransactionList } from './TransactionList';
 import { BudgetProgress } from './BudgetProgress';
@@ -9,8 +9,9 @@ import { SubscriptionsList } from './SubscriptionsList';
 import { cn } from '../utils/cn';
 import type { DashboardData } from '../types';
 import { generateWeeklySummary, generateTTSAudio } from '../services/gemini';
-// Removed ElevenLabs TTS import
 import { getTransactionsByDateRange, getActiveAiMemories } from '../services/database';
+
+declare const puter: any;
 
 interface DashboardProps {
   data: DashboardData;
@@ -21,6 +22,35 @@ export function Dashboard({ data, className }: DashboardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isPuterSignedIn, setIsPuterSignedIn] = useState(false);
+
+  useEffect(() => {
+    // Check initial Puter sign-in status
+    const checkStatus = () => {
+      if (typeof puter !== 'undefined' && puter.auth) {
+        setIsPuterSignedIn(puter.auth.isSignedIn());
+      }
+    };
+    
+    checkStatus();
+    // Poll occasionally as Puter's internal state might change via popups
+    const interval = setInterval(checkStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handlePuterSignIn = async () => {
+    try {
+      await puter.auth.signIn();
+      setIsPuterSignedIn(true);
+    } catch (err) {
+      console.error('Puter sign-in failed:', err);
+    }
+  };
+
+  const handlePuterSignOut = () => {
+    puter.auth.signOut();
+    setIsPuterSignedIn(false);
+  };
 
   const { totalIncome, totalExpenses, netSavings, savingsRate } = data;
 
@@ -61,8 +91,34 @@ export function Dashboard({ data, className }: DashboardProps) {
 
   return (
     <div className={cn('space-y-6', className)}>
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold bg-gradient-to-r from-theme-900 to-theme-700 bg-clip-text text-transparent">Overview</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-bold bg-gradient-to-r from-theme-900 to-theme-700 bg-clip-text text-transparent">Overview</h2>
+          
+          {isPuterSignedIn ? (
+            <div className="flex items-center gap-2">
+              <div className="text-xs px-3 py-1.5 bg-green-50 text-green-700 rounded-lg border border-green-200 flex items-center gap-2 font-medium">
+                <div className="w-2 h-2 rounded-full animate-pulse bg-green-500" />
+                Connected to Puter
+              </div>
+              <button
+                onClick={handlePuterSignOut}
+                className="p-1.5 text-theme-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                title="Disconnect Puter"
+              >
+                <Unlink className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handlePuterSignIn}
+              className="text-xs px-3 py-1.5 bg-theme-100 hover:bg-theme-200 text-theme-700 rounded-lg transition-colors border border-theme-200 flex items-center gap-2 font-medium"
+            >
+              <div className="w-2 h-2 rounded-full animate-pulse bg-highlight-500" />
+              Login with Puter for voice commands
+            </button>
+          )}
+        </div>
         <button
           onClick={playWeeklySummary}
           disabled={isLoadingAudio || isPlaying}

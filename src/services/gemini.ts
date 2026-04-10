@@ -1,6 +1,8 @@
 import type { GeminiTransactionResponse } from '../types/database';
 import { convertWebmToWav } from '../utils/audio';
 
+declare const puter: any;
+
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
@@ -86,10 +88,6 @@ export async function processTranscript(
   aiMemoryContext: string = '',
   transactionHistory: string = ''
 ): Promise<GeminiTransactionResponse> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
-  }
-
   const memorySection = aiMemoryContext
     ? `\n\nRECENT TRANSACTION CONTEXT (for reference):\n${aiMemoryContext}`
     : '';
@@ -98,46 +96,16 @@ export async function processTranscript(
     ? `\n\nYOUR TRANSACTION HISTORY (use this to match and delete old transactions if user asks to undo/remove something):\n${transactionHistory}`
     : '';
 
-  const userPrompt = `Parse this Nepali voice transcript into structured transactions, goals, and delete actions:
+  const userPrompt = `${SYSTEM_PROMPT}\n\nParse this Nepali voice transcript into structured transactions, goals, and delete actions:\n\nTRANSCRIPT:\n"${transcript}"\n${memorySection}\n${historySection}\n\nReturn ONLY valid JSON matching the response schema. No markdown, no explanation. If no goals or deletions are needed, return empty arrays for those fields.`;
 
-TRANSCRIPT:
-"${transcript}"
-${memorySection}
-${historySection}
+  const response = await puter.ai.chat(userPrompt, {
+    model: GEMINI_MODEL,
+    temperature: 0.1,
+  });
 
-Return ONLY valid JSON matching the response schema. No markdown, no explanation. If no goals or deletions are needed, return empty arrays for those fields.`;
+  const responseText = typeof response === 'string' ? response : (response?.text || response?.message?.content || String(response));
 
-  const response = await fetch(
-    `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: SYSTEM_PROMPT },
-              { text: userPrompt },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 4096,
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${error}`);
-  }
-
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-
-  const cleaned = rawText
+  const cleaned = responseText
     .replace(/```json\n?/g, '')
     .replace(/```\n?/g, '')
     .trim();
@@ -155,11 +123,7 @@ export async function processAudioInput(
   transactionHistory: string = '',
   goalsHistory: string = ''
 ): Promise<GeminiTransactionResponse> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
-  }
-
-  // Convert browser's native WebM recording to proper WAV format that Gemini naturally understands
+  // Convert browser's native WebM recording to proper WAV format
   const wavBlob = await convertWebmToWav(rawAudioBlob);
 
   const base64Data = await new Promise<string>((resolve, reject) => {
@@ -195,75 +159,44 @@ export async function processAudioInput(
     minute: 'numeric',
   });
 
-  const userPrompt = `Parse this Nepali voice input into structured transactions, goals, updates, and delete actions.
-I have attached the raw audio file. Listen carefully to the user's speech.
-
-=== CURRENT DATE & TIME ===
-${currentDateStr}
-===========================
-  
-${memorySection}
-${historySection}
-${goalsSection}
-`;
-
-  const response = await fetch(
-    `${GEMINI_BASE_URL}/models/${GEMINI_AUDIO_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: SYSTEM_PROMPT },
-              { text: userPrompt },
-              {
-                inlineData: {
-                  mimeType: 'audio/wav',
-                  data: base64Data
-                }
-              }
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini Audio API error: ${error}`);
-  }
-
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-
-  const cleaned = rawText
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const userPrompt = `${SYSTEM_PROMPT}\n\nParse this Nepali voice input into structured transactions, goals, updates, and delete actions.\n\n=== CURRENT DATE & TIME ===\n${currentDateStr}\n===========================\n  \n${memorySection}\n${historySection}\n${goalsSection}\n\nListen carefully to the provided audio for transaction details. Return ONLY valid JSON.`;
 
   try {
+    // Convert Blob to Data URL for better compatibility with Puter's media handler
+    const audioDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(wavBlob);
+    });
+
+    const response = await puter.ai.chat(userPrompt, audioDataUrl, {
+      model: GEMINI_AUDIO_MODEL,
+      temperature: 0.1,
+    });
+
+    if (!response) {
+      throw new Error('Puter.js returned an empty response for audio input.');
+    }
+
+    const responseText = typeof response === 'string' ? response : (response?.text || response?.message?.content || String(response));
+
+    const cleaned = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
     return JSON.parse(cleaned) as GeminiTransactionResponse;
-  } catch {
-    throw new Error(`Failed to parse Gemini response as JSON: ${cleaned}`);
+  } catch (error) {
+    console.error('Puter.js Audio Error:', error);
+    throw new Error(`AI processing failed: ${error instanceof Error ? error.message : 'Unknown Puter error'}`);
   }
 }
-
 
 export async function generateWeeklySummary(
   transactions: any[],
   aiMemories: any[]
 ): Promise<string> {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
-  }
-
   const userPrompt = `# AUDIO PROFILE: Buzzy
 ## "Your Personal Financial Guide"
 
@@ -282,27 +215,13 @@ Generate a short, engaging summary in Nepali (approx 2-3 sentences) based on the
 
 Focus on: total income/spend highlights and one encouraging insight. Output ONLY the Devanagari script text for the transcript.`;
 
-  const response = await fetch(
-    `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-        },
-      }),
-    }
-  );
+  const response = await puter.ai.chat(userPrompt, {
+    model: GEMINI_MODEL,
+    temperature: 0.7,
+  });
 
-  if (!response.ok) {
-    throw new Error(`Gemini API error generating summary`);
-  }
-
-  const data = await response.json();
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  return rawText.trim();
+  const responseText = typeof response === 'string' ? response : (response?.text || response?.message?.content || String(response));
+  return responseText.trim();
 }
 
 export async function generateTTSAudio(text: string): Promise<Blob> {
@@ -366,8 +285,8 @@ export async function generateTTSAudio(text: string): Promise<Blob> {
   view.setUint16(20, 1, true); // PCM format
   view.setUint16(22, numChannels, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true); // Byte rate
-  view.setUint16(32, numChannels * (bitsPerSample / 8), true); // Block align
+  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true); 
+  view.setUint16(32, numChannels * (bitsPerSample / 8), true); 
   view.setUint16(34, bitsPerSample, true);
   writeString(view, 36, 'data');
   view.setUint32(40, pcmData.length, true);
@@ -380,3 +299,4 @@ function writeString(view: DataView, offset: number, string: string) {
     view.setUint8(offset + i, string.charCodeAt(i));
   }
 }
+

@@ -8,6 +8,31 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        // Filter out noisy Puter.js WebSocket warnings that don't affect functionality
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        const isPuterSocketError = (msg) => 
+          typeof msg === 'string' && 
+          (msg.includes('api.puter.com/socket.io') || msg.includes('WebSocket connection to'));
+
+        console.error = function(...args) {
+          if (args.some(isPuterSocketError)) return;
+          originalError.apply(console, args);
+        };
+        console.warn = function(...args) {
+          if (args.some(isPuterSocketError)) return;
+          originalWarn.apply(console, args);
+        };
+
+        if (window.puter) return;
+        var script = document.createElement('script');
+        script.src = 'https://js.puter.com/v2/';
+        script.async = true;
+        document.head.appendChild(script);
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
