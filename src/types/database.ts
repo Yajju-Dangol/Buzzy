@@ -146,6 +146,14 @@ export interface GeminiGoalItem {
   priority: 'high' | 'medium' | 'low';
 }
 
+export interface GeminiTransactionUpdate extends Partial<GeminiTransactionItem> {
+  id: string;
+}
+
+export interface GeminiGoalUpdate extends Partial<GeminiGoalItem> {
+  id: string;
+}
+
 export type GeminiActionType =
   | 'add_transaction'
   | 'add_goal'
@@ -155,7 +163,11 @@ export interface GeminiTransactionResponse {
   transactions: GeminiTransactionItem[];
   goals: GeminiGoalItem[];
   deleteTransactionIds: string[];
+  updateTransactions?: GeminiTransactionUpdate[];
+  updateGoals?: GeminiGoalUpdate[];
+  deleteGoalIds?: string[];
   summary: string;
   language_detected: string;
   confidence: number;
+  transcript?: string;
 }

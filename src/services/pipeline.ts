@@ -1,5 +1,5 @@
 import { transcribeAudio } from './elevenlabs';
-import { processTranscript } from './gemini';
+import { processTranscript, processAudioInput } from './gemini';
 import {
   createVoiceSession,
   updateVoiceSession,
@@ -12,6 +12,10 @@ import {
   getTransactions,
   deleteTransaction,
   createGoal,
+  getGoals,
+  updateGoal,
+  deleteGoal,
+  updateTransaction,
 } from './database';
 import type {
   Transaction,
@@ -42,6 +46,9 @@ export interface PipelineResult {
   goalsCreated: number;
   transactionsDeleted: number;
   deletedTransactionIds: string[];
+  transactionsUpdated: number;
+  goalsUpdated: number;
+  goalsDeleted: number;
   summary: string;
 }
 
@@ -56,7 +63,6 @@ const STAGE_MESSAGES: Record<PipelineStage, string> = {
 
 export async function processVoiceInput(
   audioBlob: Blob,
-  fallbackTranscript: string = '',
   onProgress?: ProgressCallback
 ): Promise<PipelineResult> {
   const progress = (stage: PipelineStage) => {
@@ -80,29 +86,6 @@ export async function processVoiceInput(
     await updateVoiceSession(session.id, { status: 'transcribing' });
     progress('transcribing');
 
-    let transcription;
-    try {
-      transcription = await transcribeAudio(audioBlob, 'ne');
-    } catch {
-      if (fallbackTranscript) {
-        transcription = {
-          transcript: fallbackTranscript,
-          language: 'ne',
-          confidence: 0.7,
-          durationMs: audioBlob.size > 0 ? Math.round(audioBlob.size / 16) : 0,
-        };
-      } else {
-        throw new Error('No speech detected. Please try again and speak clearly.');
-      }
-    }
-
-    await updateVoiceSession(session.id, {
-      raw_transcript: transcription.transcript,
-      detected_language: transcription.language,
-      transcription_confidence: transcription.confidence,
-      audio_duration_ms: transcription.durationMs,
-    });
-
     await updateVoiceSession(session.id, { status: 'processing' });
     progress('ai_processing');
 
@@ -111,13 +94,24 @@ export async function processVoiceInput(
     const recentTransactions = await getTransactions(20);
     const transactionHistory = buildTransactionHistoryString(recentTransactions);
 
-    const geminiResponse = await processTranscript(
-      transcription.transcript,
+    const recentGoals = await getGoals();
+    const goalsHistory = buildGoalsHistoryString(recentGoals);
+
+    // Call Gemini directly with the audio blob to decode completely
+    const geminiResponse = await processAudioInput(
+      audioBlob,
       memoryContext,
-      transactionHistory
+      transactionHistory,
+      goalsHistory
     );
+    
+    const transcriptionText = geminiResponse.transcript || 'Audio processed via Gemini.';
 
     await updateVoiceSession(session.id, {
+      raw_transcript: transcriptionText,
+      detected_language: geminiResponse.language_detected || 'ne',
+      transcription_confidence: geminiResponse.confidence,
+      audio_duration_ms: audioBlob.size > 0 ? Math.round(audioBlob.size / 16) : 0,
       gemini_response: geminiResponse,
       transactions_extracted: geminiResponse.transactions.length,
     });
@@ -142,10 +136,10 @@ export async function processVoiceInput(
         is_recurring: item.is_recurring ?? false,
         recurrence: item.recurrence ?? null,
         voice_session_id: session.id,
-        raw_transcript: transcription.transcript,
+        raw_transcript: transcriptionText,
         gemini_raw_response: geminiResponse,
         confidence_score: geminiResponse.confidence,
-        language: transcription.language,
+        language: geminiResponse.language_detected || 'ne',
         is_verified: false,
       });
 
@@ -177,25 +171,75 @@ export async function processVoiceInput(
 
     let transactionsDeleted = 0;
     const deletedIds: string[] = [];
-    for (const txId of geminiResponse.deleteTransactionIds) {
-      try {
-        await deleteTransaction(txId);
-        transactionsDeleted++;
-        deletedIds.push(txId);
-      } catch {
-        console.warn(`Failed to delete transaction ${txId}`);
+    if (geminiResponse.deleteTransactionIds) {
+      for (const txId of geminiResponse.deleteTransactionIds) {
+        try {
+          await deleteTransaction(txId);
+          transactionsDeleted++;
+          deletedIds.push(txId);
+        } catch {
+          console.warn(`Failed to delete transaction ${txId}`);
+        }
+      }
+    }
+
+    let goalsDeleted = 0;
+    if (geminiResponse.deleteGoalIds) {
+      for (const gId of geminiResponse.deleteGoalIds) {
+        try {
+          await deleteGoal(gId);
+          goalsDeleted++;
+        } catch {
+          console.warn(`Failed to delete goal ${gId}`);
+        }
+      }
+    }
+
+    let transactionsUpdated = 0;
+    if (geminiResponse.updateTransactions) {
+      for (const update of geminiResponse.updateTransactions) {
+        try {
+          const { id, ...fields } = update;
+          // map fields correctly if necessary
+          const mapped: any = { ...fields };
+          if (fields.date) mapped.transaction_date = fields.date;
+          if (fields.is_recurring !== undefined) mapped.is_recurring = fields.is_recurring;
+          
+          await updateTransaction(id, mapped);
+          transactionsUpdated++;
+        } catch {
+          console.warn(`Failed to update transaction ${update.id}`);
+        }
+      }
+    }
+
+    let goalsUpdated = 0;
+    if (geminiResponse.updateGoals) {
+      for (const update of geminiResponse.updateGoals) {
+        try {
+          const { id, ...fields } = update;
+          const mapped: any = { ...fields };
+          if (fields.targetAmount) mapped.target_amount = fields.targetAmount;
+          if (fields.monthlyContribution !== undefined) mapped.monthly_contribution = fields.monthlyContribution;
+          if (fields.targetDate) mapped.target_date = fields.targetDate;
+
+          await updateGoal(id, mapped);
+          goalsUpdated++;
+        } catch {
+          console.warn(`Failed to update goal ${update.id}`);
+        }
       }
     }
 
     await generateMemoryEntries(
       geminiResponse.transactions,
-      transcription.transcript,
+      transcriptionText,
       createdTransactions
     );
 
     const updatedSession = await updateVoiceSession(session.id, {
       status: 'completed',
-      gemini_prompt: transcription.transcript,
+      gemini_prompt: transcriptionText,
     });
 
     progress('done');
@@ -206,6 +250,9 @@ export async function processVoiceInput(
       goalsCreated,
       transactionsDeleted,
       deletedTransactionIds: deletedIds,
+      transactionsUpdated,
+      goalsUpdated,
+      goalsDeleted,
       summary: geminiResponse.summary,
     };
   } catch (error) {
@@ -246,6 +293,17 @@ function buildTransactionHistoryString(transactions: any[]): string {
     .map(
       (t) =>
         `ID: ${t.id} | ${t.type.toUpperCase()} ${t.amount} NPR | ${t.category} | ${t.merchant ?? 'N/A'} | ${t.description ?? ''} | ${t.transaction_date}`
+    )
+    .join('\n');
+}
+
+function buildGoalsHistoryString(goals: any[]): string {
+  if (goals.length === 0) return 'No financial goals yet.';
+
+  return goals
+    .map(
+      (g) =>
+        `ID: ${g.id} | NAME: ${g.name} | TARGET: ${g.target_amount} | CURRENT: ${g.current_amount} | PRIORITY: ${g.priority}`
     )
     .join('\n');
 }

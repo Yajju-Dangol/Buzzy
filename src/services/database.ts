@@ -319,19 +319,24 @@ export async function createTag(name: string, color: string = '#6B7280'): Promis
 export async function getOrCreateTag(name: string): Promise<Tag> {
   try {
     const user = await getCurrentUser();
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from('tags')
       .select('*')
       .eq('user_id', user.id)
       .eq('name', name)
-      .single();
+      .maybeSingle();
+
+    if (error && !isMissingTable(error)) {
+      console.warn("Error fetching tag:", error);
+    }
 
     if (existing) return existing as Tag;
-  } catch {
+    
+    return await createTag(name);
+  } catch (e) {
+    console.warn("Failed to get or create tag:", e);
     return { id: '', name, color: '#6B7280', created_at: '' } as Tag;
   }
-
-  return createTag(name);
 }
 
 // ============================================
@@ -650,4 +655,39 @@ export async function createGoal(
     return null;
   }
   return data;
+}
+
+export async function updateGoal(
+  id: string,
+  updates: Partial<{
+    name: string;
+    target_amount: number;
+    current_amount: number;
+    monthly_contribution: number | null;
+    target_date: string | null;
+    priority: 'high' | 'medium' | 'low';
+  }>
+): Promise<any> {
+  const user = await getCurrentUser();
+  const { data, error } = await supabase
+    .from('financial_goals')
+    .update(updates)
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteGoal(id: string): Promise<void> {
+  const user = await getCurrentUser();
+  const { error } = await supabase
+    .from('financial_goals')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id);
+
+  if (error) throw error;
 }

@@ -8,8 +8,8 @@ import { FinancialGoals } from './FinancialGoals';
 import { SubscriptionsList } from './SubscriptionsList';
 import { cn } from '../utils/cn';
 import type { DashboardData } from '../types';
-import { generateWeeklySummary } from '../services/gemini';
-import { textToSpeech } from '../services/elevenlabs';
+import { generateWeeklySummary, generateTTSAudio } from '../services/gemini';
+// Removed ElevenLabs TTS import
 import { getTransactionsByDateRange, getActiveAiMemories } from '../services/database';
 
 interface DashboardProps {
@@ -41,7 +41,7 @@ export function Dashboard({ data, className }: DashboardProps) {
       ]);
 
       const summaryText = await generateWeeklySummary(recentTx, aiMemories);
-      const audioBlob = await textToSpeech(summaryText);
+      const audioBlob = await generateTTSAudio(summaryText);
       const url = URL.createObjectURL(audioBlob);
       
       setAudioUrl(url);

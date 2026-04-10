@@ -1,8 +1,10 @@
 import type { GeminiTransactionResponse } from '../types/database';
+import { convertWebmToWav } from '../utils/audio';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-3.1-flash-lite-preview';
+const GEMINI_AUDIO_MODEL = 'gemini-3-flash-preview';
 
 const SYSTEM_PROMPT = `You are Buzzy AI, a Nepali-language financial assistant. You analyze voice transcripts and perform three types of actions:
 
@@ -15,6 +17,7 @@ RULES FOR TRANSACTIONS:
 - Extract: type (income/expense/transfer), amount, category, merchant, description, date, tags, is_recurring, recurrence pattern
 - Common Nepali categories: खाना (food), यात्रा (transport), बिल (bills), किनमेल (shopping), स्वास्थ्य (health), मनोरञ्जन (entertainment), शिक्षा (education), भाडा (rent), तलब (salary), पसल (groceries)
 - Map Nepali merchant names as-is
+- Use the current date provided in the prompt for "today". Calculate relative dates for "yesterday" or "tomorrow". Output dates strictly in YYYY-MM-DD format.
 - If no date mentioned, use today
 - If account hinted (e.g., "eSewa", "cash", "bank"), set account_hint
 - Detect recurring patterns
@@ -26,11 +29,10 @@ RULES FOR FINANCIAL GOALS:
 - If target amount not explicitly stated, estimate reasonably based on context
 - If monthly contribution mentioned, include it
 
-RULES FOR DELETING TRANSACTIONS:
-- When user says "undo", "delete", "remove", "cancel", "wrong", "mistake" about a past transaction, add its ID to deleteTransactionIds
-- Match by merchant, category, amount, or description from the transaction history provided
-- Only delete if the user clearly wants to remove it
-- If user says "I didn't spend X at Y" or "that was wrong", delete the matching transaction
+RULES FOR DELETING & UPDATING:
+- Use the provided TRANSACTION HISTORY and GOAL HISTORY to identify what the user wants to update/delete based on context and ID.
+- To delete, specify the exact ID in \`deleteTransactionIds\` or \`deleteGoalIds\`.
+- To update, provide the ID and ONLY the fields that should be changed in \`updateTransactions\` or \`updateGoals\`. (e.g. if user says "change the laptop goal to 60k", provide the ID for the laptop goal and \`{"targetAmount": 60000}\`). Do not include unchanged fields.
 
 RESPONSE SCHEMA (JSON only, no markdown):
 {
@@ -57,10 +59,26 @@ RESPONSE SCHEMA (JSON only, no markdown):
       "priority": "high" | "medium" | "low"
     }
   ],
-  "deleteTransactionIds": ["transaction-id-1", "transaction-id-2"],
-  "summary": "Brief summary of ALL actions taken (transactions added, goals created, transactions deleted)",
+  "updateTransactions": [
+    {
+      "id": "target-transaction-id",
+      "amount": 500, // (only include the fields being updated)
+      "category": "updated_category",
+      "date": "2026-04-10"
+    }
+  ],
+  "updateGoals": [
+    {
+      "id": "target-goal-id",
+      "targetAmount": 60000 // (only include the fields being updated)
+    }
+  ],
+  "deleteTransactionIds": ["transaction-id-1"],
+  "deleteGoalIds": ["goal-id-1"],
+  "summary": "Brief summary of ALL actions taken",
   "language_detected": "ne" | "en" | "mixed",
-  "confidence": 0.0 to 1.0
+  "confidence": 0.0 to 1.0,
+  "transcript": "Full accurate transcription of the user's audio input"
 }`;
 
 export async function processTranscript(
@@ -131,6 +149,113 @@ Return ONLY valid JSON matching the response schema. No markdown, no explanation
   }
 }
 
+export async function processAudioInput(
+  rawAudioBlob: Blob,
+  aiMemoryContext: string = '',
+  transactionHistory: string = '',
+  goalsHistory: string = ''
+): Promise<GeminiTransactionResponse> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
+  }
+
+  // Convert browser's native WebM recording to proper WAV format that Gemini naturally understands
+  const wavBlob = await convertWebmToWav(rawAudioBlob);
+
+  const base64Data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(wavBlob);
+  });
+
+  const memorySection = aiMemoryContext
+    ? `\n\nRECENT TRANSACTION CONTEXT (for reference):\n${aiMemoryContext}`
+    : '';
+
+  const historySection = transactionHistory
+    ? `\n\nYOUR TRANSACTION HISTORY (for updating/deleting):\n${transactionHistory}`
+    : '';
+
+  const goalsSection = goalsHistory
+    ? `\n\nYOUR FINANCIAL GOALS (for updating/deleting):\n${goalsHistory}`
+    : '';
+
+  const now = new Date();
+  const currentDateStr = now.toLocaleString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+  });
+
+  const userPrompt = `Parse this Nepali voice input into structured transactions, goals, updates, and delete actions.
+I have attached the raw audio file. Listen carefully to the user's speech.
+
+=== CURRENT DATE & TIME ===
+${currentDateStr}
+===========================
+  
+${memorySection}
+${historySection}
+${goalsSection}
+`;
+
+  const response = await fetch(
+    `${GEMINI_BASE_URL}/models/${GEMINI_AUDIO_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: SYSTEM_PROMPT },
+              { text: userPrompt },
+              {
+                inlineData: {
+                  mimeType: 'audio/wav',
+                  data: base64Data
+                }
+              }
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Gemini Audio API error: ${error}`);
+  }
+
+  const data = await response.json();
+  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+
+  const cleaned = rawText
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned) as GeminiTransactionResponse;
+  } catch {
+    throw new Error(`Failed to parse Gemini response as JSON: ${cleaned}`);
+  }
+}
+
+
 export async function generateWeeklySummary(
   transactions: any[],
   aiMemories: any[]
@@ -139,17 +264,23 @@ export async function generateWeeklySummary(
     throw new Error('Missing VITE_GEMINI_API_KEY in .env');
   }
 
-  const userPrompt = `You are an AI financial assistant. Make an engaging, short, friendly summary in Nepali language (approx. 2-3 sentences max) based on the user's data from the last 7 days.
-Focus strictly on the key highlights: total income/spend, the top expense category, and any relevant insight from their AI memory notes.
-The summary MUST ONLY be in written Nepali (Devanagari script), formatted to sound natural when spoken by a Text-to-Speech system.
+  const userPrompt = `# AUDIO PROFILE: Buzzy
+## "Your Personal Financial Guide"
 
-LAST 7 DAYS TRANSACTIONS:
-${JSON.stringify(transactions)}
+## THE SCENE: A quiet, supportive home office
+Buzzy is speaking directly to the user, providing a warm and encouraging overview of their recent financial activity. The tone is informative yet optimistic.
 
-AI MEMORIES:
-${JSON.stringify(aiMemories)}
+### DIRECTOR'S NOTES
+Style: Warm, encouraging, and clear. Use a "vocal smile" to make the financial advice feel supportive rather than critical.
+Pace: Moderate and easy to follow.
+Accent: Nepali
 
-Return ONLY the Nepali text.`;
+#### TRANSCRIPT
+Generate a short, engaging summary in Nepali (approx 2-3 sentences) based on the following data:
+- TOTALS: ${JSON.stringify(transactions)}
+- INSIGHTS: ${JSON.stringify(aiMemories)}
+
+Focus on: total income/spend highlights and one encouraging insight. Output ONLY the Devanagari script text for the transcript.`;
 
   const response = await fetch(
     `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
@@ -172,4 +303,80 @@ Return ONLY the Nepali text.`;
   const data = await response.json();
   const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   return rawText.trim();
+}
+
+export async function generateTTSAudio(text: string): Promise<Blob> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('Missing VITE_GEMINI_API_KEY in .env');
+  }
+
+  const url = `${GEMINI_BASE_URL}/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text }]
+        }
+      ],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Aoede' }
+          }
+        }
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini TTS API error: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  
+  if (!base64Audio) {
+    throw new Error('No audio data returned from Gemini TTS');
+  }
+
+  const pcmBinaryString = atob(base64Audio);
+  const pcmLen = pcmBinaryString.length;
+  const pcmData = new Uint8Array(pcmLen);
+  for (let i = 0; i < pcmLen; i++) {
+    pcmData[i] = pcmBinaryString.charCodeAt(i);
+  }
+
+  // Add WAV Header (PCM, 24kHz, 16-bit, Mono)
+  const sampleRate = 24000;
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + pcmData.length, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * (bitsPerSample / 8), true); // Byte rate
+  view.setUint16(32, numChannels * (bitsPerSample / 8), true); // Block align
+  view.setUint16(34, bitsPerSample, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, pcmData.length, true);
+
+  return new Blob([header, pcmData], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, string: string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
 }

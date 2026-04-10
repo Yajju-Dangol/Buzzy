@@ -163,12 +163,12 @@ function App() {
     }
   }, [fetchData, session]);
 
-  const handleTranscript = useCallback(async (audioBlob: Blob, fallbackTranscript: string = '') => {
+  const handleTranscript = useCallback(async (audioBlob: Blob) => {
     setVoiceError(null);
     setPipelineProgress({ stage: 'transcribing', message: 'Transcribing audio...' });
 
     try {
-      const result = await processVoiceInput(audioBlob, fallbackTranscript, (progress: PipelineProgress) => {
+      const result = await processVoiceInput(audioBlob, (progress: PipelineProgress) => {
         setPipelineProgress(progress);
       });
 

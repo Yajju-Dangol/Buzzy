@@ -4,7 +4,7 @@ import { Mic, Loader2, Sparkles } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 interface VoiceButtonProps {
-  onTranscript: (audioBlob: Blob, fallbackTranscript: string) => void | Promise<void>;
+  onTranscript: (audioBlob: Blob) => void | Promise<void>;
   onStateChange?: (state: VoiceState) => void;
 }
 
@@ -22,50 +22,7 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
   const startListening = useCallback(async () => {
     try {
       setError(null);
-      setLiveTranscript('');
       chunksRef.current = [];
-
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'ne-NP';
-        recognition.maxAlternatives = 1;
-
-        recognition.onresult = (event: any) => {
-          let interim = '';
-          let final = '';
-          for (let i = 0; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              final += event.results[i][0].transcript;
-            } else {
-              interim += event.results[i][0].transcript;
-            }
-          }
-          setLiveTranscript(final + interim);
-        };
-
-        recognition.onerror = (event: any) => {
-          if (event.error === 'no-speech') {
-          } else if (event.error === 'not-allowed') {
-            setError('Microphone access denied.');
-          }
-        };
-
-        recognition.onend = () => {
-          if (state === 'listening') {
-            try {
-              recognition.start();
-            } catch {}
-          }
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -104,14 +61,27 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
   }, [onStateChange, state]);
 
   const stopListening = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.onend = null;
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.onstop = () => {
+        if (chunksRef.current.length === 0) {
+          setError('No audio recorded. Please try again.');
+          setState('idle');
+          onStateChange?.('idle');
+          return;
+        }
+
+        const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        chunksRef.current = [];
+
+        onTranscript(audioBlob);
+        setState('idle');
+        onStateChange?.('idle');
+      };
+      
       mediaRecorderRef.current.stop();
+    } else {
+      setState('idle');
+      onStateChange?.('idle');
     }
 
     if (streamRef.current) {
@@ -121,26 +91,7 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
 
     setState('processing');
     onStateChange?.('processing');
-
-    const transcript = liveTranscript.trim();
-    if (!transcript && chunksRef.current.length === 0) {
-      setError('No speech detected. Please try again.');
-      setState('idle');
-      onStateChange?.('idle');
-      return;
-    }
-
-    const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
-    const fallbackTranscript = liveTranscript.trim();
-    chunksRef.current = [];
-
-    setTimeout(() => {
-      onTranscript(audioBlob, fallbackTranscript);
-      setLiveTranscript('');
-      setState('idle');
-      onStateChange?.('idle');
-    }, 500);
-  }, [liveTranscript, onTranscript, onStateChange]);
+  }, [onTranscript, onStateChange]);
 
   const handleClick = useCallback(() => {
     if (state === 'idle') {
@@ -220,15 +171,7 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
         )}
       </motion.button>
 
-      {state === 'listening' && liveTranscript && (
-        <motion.p
-          className="text-cream-400/60 text-xs text-center max-w-xs italic"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          "{liveTranscript.slice(0, 100)}{liveTranscript.length > 100 ? '...' : ''}"
-        </motion.p>
-      )}
+
 
       <motion.div
         className="text-center h-8"
