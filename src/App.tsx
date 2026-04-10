@@ -21,6 +21,9 @@ import {
   getBudgets,
   getGoals,
 } from './services/database';
+import { supabase } from './lib/supabase';
+import { Auth } from './components/Auth';
+import { LogOut } from 'lucide-react';
 
 function mapDbAccountToUi(account: DbAccount): { id: string; name: string; type: 'checking' | 'savings' | 'credit_card' | 'cash' | 'investment' | 'loan' | 'ewallet'; balance: number } {
   return {
@@ -63,6 +66,8 @@ function mapDbGoalToUi(goal: any): FinancialGoal {
 type ActiveView = 'dashboard' | 'transactions' | 'analytics' | 'accounts';
 
 function App() {
+  const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
@@ -77,7 +82,27 @@ function App() {
     message: '',
   });
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   const fetchData = useCallback(async () => {
+    if (!session) return;
     try {
       const [accounts, transactions, budgets, goals] = await Promise.all([
         getAccounts(),
@@ -129,11 +154,14 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, session]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (session) {
+      setLoading(true);
+      fetchData();
+    }
+  }, [fetchData, session]);
 
   const handleTranscript = useCallback(async (audioBlob: Blob, fallbackTranscript: string = '') => {
     setVoiceError(null);
@@ -214,6 +242,18 @@ function App() {
     { id: 'analytics' as ActiveView, icon: PieChart, label: 'Analytics' },
     { id: 'accounts' as ActiveView, icon: Wallet, label: 'Accounts' },
   ];
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-theme-900 text-cream-400 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-highlight-500" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Auth />;
+  }
 
   if (loading) {
     return (
@@ -299,6 +339,16 @@ function App() {
               </button>
             ))}
           </nav>
+
+          <div className="px-4 pb-4">
+            <button
+              onClick={handleSignOut}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 text-cream-400/60 hover:bg-theme-700/50 hover:text-highlight-500"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="font-medium">Sign Out</span>
+            </button>
+          </div>
 
           <div className="p-6 border-t border-theme-700">
             <div className="p-4 rounded-2xl bg-theme-700/50 border border-highlight-500">

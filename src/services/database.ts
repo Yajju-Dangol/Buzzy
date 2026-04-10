@@ -21,15 +21,23 @@ function isMissingTable(error: any): boolean {
   );
 }
 
+async function getCurrentUser() {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new Error('User not authenticated');
+  return user;
+}
+
 // ============================================
 // ACCOUNTS
 // ============================================
 
 export async function getAccounts(): Promise<Account[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('accounts')
       .select('*')
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .order('created_at', { ascending: true });
 
@@ -39,17 +47,19 @@ export async function getAccounts(): Promise<Account[]> {
     }
     return data as Account[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
 
 export async function getAccount(id: string): Promise<Account | null> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('accounts')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (error) {
@@ -58,7 +68,7 @@ export async function getAccount(id: string): Promise<Account | null> {
     }
     return data as Account;
   } catch (e) {
-    if (isMissingTable(e)) return null;
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return null;
     throw e;
   }
 }
@@ -66,9 +76,10 @@ export async function getAccount(id: string): Promise<Account | null> {
 export async function createAccount(
   account: Omit<Account, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Account> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('accounts')
-    .insert(account)
+    .insert({ ...account, user_id: user.id } as any)
     .select()
     .single();
 
@@ -80,10 +91,12 @@ export async function updateAccount(
   id: string,
   updates: Partial<Account>
 ): Promise<Account> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('accounts')
     .update(updates)
     .eq('id', id)
+    .eq('user_id', user.id)
     .select()
     .single();
 
@@ -100,9 +113,11 @@ export async function getTransactions(
   offset: number = 0
 ): Promise<Transaction[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
+      .eq('user_id', user.id)
       .order('transaction_date', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -112,17 +127,19 @@ export async function getTransactions(
     }
     return data as Transaction[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
 
 export async function getTransaction(id: string): Promise<Transaction | null> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (error) {
@@ -131,7 +148,7 @@ export async function getTransaction(id: string): Promise<Transaction | null> {
     }
     return data as Transaction;
   } catch (e) {
-    if (isMissingTable(e)) return null;
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return null;
     throw e;
   }
 }
@@ -139,9 +156,10 @@ export async function getTransaction(id: string): Promise<Transaction | null> {
 export async function createTransaction(
   transaction: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Transaction> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('transactions')
-    .insert(transaction)
+    .insert({ ...transaction, user_id: user.id } as any)
     .select()
     .single();
 
@@ -152,9 +170,11 @@ export async function createTransaction(
 export async function createTransactions(
   transactions: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>[]
 ): Promise<Transaction[]> {
+  const user = await getCurrentUser();
+  const inserts = transactions.map(t => ({ ...t, user_id: user.id }));
   const { data, error } = await supabase
     .from('transactions')
-    .insert(transactions)
+    .insert(inserts as any)
     .select();
 
   if (error) throw error;
@@ -165,10 +185,12 @@ export async function updateTransaction(
   id: string,
   updates: Partial<Transaction>
 ): Promise<Transaction> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('transactions')
     .update(updates)
     .eq('id', id)
+    .eq('user_id', user.id)
     .select()
     .single();
 
@@ -177,10 +199,12 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
+  const user = await getCurrentUser();
   const { error } = await supabase
     .from('transactions')
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .eq('user_id', user.id);
 
   if (error) throw error;
 }
@@ -189,9 +213,11 @@ export async function getTransactionsByCategory(
   category: string
 ): Promise<Transaction[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
+      .eq('user_id', user.id)
       .eq('category', category)
       .order('transaction_date', { ascending: false });
 
@@ -201,7 +227,7 @@ export async function getTransactionsByCategory(
     }
     return data as Transaction[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -210,9 +236,11 @@ export async function getTransactionsByAccount(
   accountId: string
 ): Promise<Transaction[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
+      .eq('user_id', user.id)
       .eq('account_id', accountId)
       .order('transaction_date', { ascending: false });
 
@@ -222,7 +250,7 @@ export async function getTransactionsByAccount(
     }
     return data as Transaction[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -232,9 +260,11 @@ export async function getTransactionsByDateRange(
   endDate: string
 ): Promise<Transaction[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
+      .eq('user_id', user.id)
       .gte('transaction_date', startDate)
       .lte('transaction_date', endDate)
       .order('transaction_date', { ascending: false });
@@ -245,7 +275,7 @@ export async function getTransactionsByDateRange(
     }
     return data as Transaction[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -256,9 +286,11 @@ export async function getTransactionsByDateRange(
 
 export async function getTags(): Promise<Tag[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('tags')
       .select('*')
+      .eq('user_id', user.id)
       .order('name', { ascending: true });
 
     if (error) {
@@ -267,15 +299,16 @@ export async function getTags(): Promise<Tag[]> {
     }
     return data as Tag[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
 
 export async function createTag(name: string, color: string = '#6B7280'): Promise<Tag> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('tags')
-    .insert({ name, color })
+    .insert({ name, color, user_id: user.id } as any)
     .select()
     .single();
 
@@ -285,9 +318,11 @@ export async function createTag(name: string, color: string = '#6B7280'): Promis
 
 export async function getOrCreateTag(name: string): Promise<Tag> {
   try {
+    const user = await getCurrentUser();
     const { data: existing } = await supabase
       .from('tags')
       .select('*')
+      .eq('user_id', user.id)
       .eq('name', name)
       .single();
 
@@ -307,6 +342,8 @@ export async function addTagsToTransaction(
   transactionId: string,
   tagIds: string[]
 ): Promise<void> {
+  // transaction_tags doesn't need user_id typically if transaction validates it,
+  // but let's just insert as before. RLS will protect it.
   const inserts: TransactionTag[] = tagIds.map((tagId) => ({
     transaction_id: transactionId,
     tag_id: tagId,
@@ -321,6 +358,7 @@ export async function addTagsToTransaction(
 
 export async function getTransactionTags(transactionId: string): Promise<Tag[]> {
   try {
+    // Assuming transactions RLS will block if user doesn't own it.
     const { data, error } = await supabase
       .from('transaction_tags')
       .select('tags(*)')
@@ -330,7 +368,7 @@ export async function getTransactionTags(transactionId: string): Promise<Tag[]> 
       if (isMissingTable(error)) return [];
       throw error;
     }
-    return (data as any[]).map((row) => row.tags) as Tag[];
+    return (data as any[]).map((row: any) => row.tags) as Tag[];
   } catch (e) {
     if (isMissingTable(e)) return [];
     throw e;
@@ -345,9 +383,10 @@ export async function createVoiceSession(
   session: Omit<VoiceSession, 'id' | 'created_at'>
 ): Promise<VoiceSession> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('voice_sessions')
-      .insert(session)
+      .insert({ ...session, user_id: user.id } as any)
       .select()
       .single();
 
@@ -359,7 +398,7 @@ export async function createVoiceSession(
     }
     return data as VoiceSession;
   } catch (e) {
-    if (isMissingTable(e)) {
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) {
       return { ...session, id: Date.now().toString(), created_at: new Date().toISOString() } as VoiceSession;
     }
     throw e;
@@ -371,10 +410,12 @@ export async function updateVoiceSession(
   updates: Partial<VoiceSession>
 ): Promise<VoiceSession> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('voice_sessions')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -395,9 +436,11 @@ export async function updateVoiceSession(
 
 export async function getVoiceSessions(limit: number = 20): Promise<VoiceSession[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('voice_sessions')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -407,7 +450,7 @@ export async function getVoiceSessions(limit: number = 20): Promise<VoiceSession
     }
     return data as VoiceSession[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -418,9 +461,11 @@ export async function getVoiceSessions(limit: number = 20): Promise<VoiceSession
 
 export async function getActiveAiMemories(limit: number = 50): Promise<AiMemory[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('ai_memory')
       .select('*')
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .or('expires_at.is.null,expires_at.gt.now()')
       .order('relevance_score', { ascending: false })
@@ -432,7 +477,7 @@ export async function getActiveAiMemories(limit: number = 50): Promise<AiMemory[
     }
     return data as AiMemory[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -441,9 +486,10 @@ export async function createAiMemory(
   memory: Omit<AiMemory, 'id' | 'created_at'>
 ): Promise<AiMemory> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('ai_memory')
-      .insert(memory)
+      .insert({ ...memory, user_id: user.id } as any)
       .select()
       .single();
 
@@ -455,7 +501,7 @@ export async function createAiMemory(
     }
     return data as AiMemory;
   } catch (e) {
-    if (isMissingTable(e)) {
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) {
       return { ...memory, id: Date.now().toString(), created_at: new Date().toISOString() } as AiMemory;
     }
     throw e;
@@ -466,9 +512,11 @@ export async function createAiMemories(
   memories: Omit<AiMemory, 'id' | 'created_at'>[]
 ): Promise<AiMemory[]> {
   try {
+    const user = await getCurrentUser();
+    const inserts = memories.map(m => ({ ...m, user_id: user.id }));
     const { data, error } = await supabase
       .from('ai_memory')
-      .insert(memories)
+      .insert(inserts as any)
       .select();
 
     if (error) {
@@ -483,7 +531,7 @@ export async function createAiMemories(
     }
     return data as AiMemory[];
   } catch (e) {
-    if (isMissingTable(e)) {
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) {
       return memories.map((m, i) => ({
         ...m,
         id: `${Date.now()}-${i}`,
@@ -509,9 +557,11 @@ export async function buildMemoryContext(): Promise<string> {
 
 export async function getBudgets(): Promise<Budget[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('budgets')
       .select('*')
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .order('category', { ascending: true });
 
@@ -521,7 +571,7 @@ export async function getBudgets(): Promise<Budget[]> {
     }
     return data as Budget[];
   } catch (e) {
-    if (isMissingTable(e)) return [];
+    if (isMissingTable(e) || (e instanceof Error && e.message === 'User not authenticated')) return [];
     throw e;
   }
 }
@@ -529,9 +579,10 @@ export async function getBudgets(): Promise<Budget[]> {
 export async function createBudget(
   budget: Omit<Budget, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Budget> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('budgets')
-    .insert(budget)
+    .insert({ ...budget, user_id: user.id } as any)
     .select()
     .single();
 
@@ -543,10 +594,12 @@ export async function updateBudget(
   id: string,
   updates: Partial<Budget>
 ): Promise<Budget> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('budgets')
     .update(updates)
     .eq('id', id)
+    .eq('user_id', user.id)
     .select()
     .single();
 
@@ -560,9 +613,11 @@ export async function updateBudget(
 
 export async function getGoals(): Promise<any[]> {
   try {
+    const user = await getCurrentUser();
     const { data, error } = await supabase
       .from('financial_goals')
       .select('*')
+      .eq('user_id', user.id)
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -583,9 +638,10 @@ export async function createGoal(
     priority: 'high' | 'medium' | 'low';
   }
 ): Promise<any> {
+  const user = await getCurrentUser();
   const { data, error } = await supabase
     .from('financial_goals')
-    .insert(goal)
+    .insert({ ...goal, user_id: user.id } as any)
     .select()
     .single();
 
