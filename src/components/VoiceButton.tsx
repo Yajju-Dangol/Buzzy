@@ -24,10 +24,14 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
       setError(null);
       chunksRef.current = [];
 
+      // iOS Safari requires HTTPS for microphone access.
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        setError('Microphone access requires a secure (HTTPS) connection on mobile.');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 24000,
-          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
         }
@@ -35,9 +39,15 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
 
       streamRef.current = stream;
 
+      // Determine the best supported mimeType (iOS Safari often requires audio/mp4)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
+        ? 'audio/webm;codecs=opus' 
+        : MediaRecorder.isTypeSupported('audio/mp4') 
+          ? 'audio/mp4' 
+          : '';
+
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus',
-        audioBitsPerSecond: 128000
+        mimeType: mimeType,
       });
 
       mediaRecorderRef.current = mediaRecorder;
@@ -52,9 +62,13 @@ export function VoiceButton({ onTranscript, onStateChange }: VoiceButtonProps) {
       setState('listening');
       onStateChange?.('listening');
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error starting voice:', err);
-      setError('Could not access microphone.');
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Microphone permission denied. Please enable it in browser settings.');
+      } else {
+        setError('Could not access microphone. Ensure you are on HTTPS.');
+      }
       setState('idle');
       onStateChange?.('idle');
     }
